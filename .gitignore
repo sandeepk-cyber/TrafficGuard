@@ -4,6 +4,7 @@ __pycache__/
 .pytest_cache/
 .env
 data/trafficguard.db
+data/debug/
 data/incidents/*/
 models/*.onnx
 !data/test/

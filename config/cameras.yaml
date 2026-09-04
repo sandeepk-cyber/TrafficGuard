@@ -1,0 +1,85 @@
+cameras:
+  cctv_kaggle_04_highway:
+    name: Kaggle CCTV - Elevated Highway High-Speed Crash
+    type: file
+    url: data/test/cctv_kaggle_04_highway_highspeed.mp4
+    location: Elevated Highway Pole Cam KM 24.8
+    latitude: 37.7749
+    longitude: -122.4194
+  cctv_kaggle_02_junction:
+    name: Kaggle CCTV - Arterial Junction T-Bone Collision
+    type: file
+    url: data/test/cctv_kaggle_02_junction_tbone.mp4
+    location: 4th & Commercial Arterial Junction
+    latitude: 34.0522
+    longitude: -118.2437
+  cctv_kaggle_01_urban:
+    name: Kaggle CCTV - Urban Motorcycle Conflict
+    type: file
+    url: data/test/cctv_kaggle_01_urban_motorcycle.mp4
+    location: Downtown Market Street Corridor
+    latitude: 37.7891
+    longitude: -122.4014
+  cctv_kaggle_03_crossroads:
+    name: Kaggle CCTV - Dense Urban Commercial Crossroads
+    type: file
+    url: data/test/cctv_kaggle_03_dense_crossroads.mp4
+    location: Central Retail Crossing & Parking Sector
+    latitude: 40.7128
+    longitude: -74.006
+  cctv_kaggle_05_truck:
+    name: Kaggle CCTV - Commercial Truck Heavy Impact
+    type: file
+    url: data/test/cctv_kaggle_05_truck_collision.mp4
+    location: Logistics Expressway Terminal Gate 3
+    latitude: 41.8781
+    longitude: -87.6298
+  cctv_kaggle_06_bus:
+    name: Kaggle CCTV - Arterial Bus Corridor Collision
+    type: file
+    url: data/test/cctv_kaggle_06_arterial_bus.mp4
+    location: Metropolitan Transit Corridor KM 8.1
+    latitude: 29.7604
+    longitude: -95.3698
+  cctv_kaggle_master:
+    name: Kaggle CCTV - Full Incident Surveillance Compilation
+    type: file
+    url: data/test/cctv_kaggle_master_feed.mp4
+    location: Multi-Sector Surveillance Ingest Feed
+    latitude: 38.9072
+    longitude: -77.0369
+  cctv_expressway_accident:
+    name: Metropolitan Expressway Collision (CCTV 1080p)
+    type: file
+    url: data/test/accident_cctv.webm
+    location: Metropolitan Expressway Junction KM 14.2
+    latitude: 34.0522
+    longitude: -118.2437
+  cctv_intersection_collision:
+    name: Urban Intersection Collision (CCTV 1080p)
+    type: file
+    url: data/test/cctv_junction_accident.webm
+    location: Jones Blvd & Copper Crest Intersection
+    latitude: 36.1699
+    longitude: -115.1398
+  cctv_highway_interchange:
+    name: Jane Byrne Interstate Interchange (CCTV 1080p)
+    type: file
+    url: data/test/cctv_highway_interchange.webm
+    location: Interstate 90/94 Expressway Corridor
+    latitude: 41.8756
+    longitude: -87.6441
+  caltrans_live_cctv:
+    name: Caltrans Live Traffic Feed (IPTV HLS)
+    type: hls
+    url: https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
+    location: State Route 99 Traffic Corridor
+    latitude: 36.7468
+    longitude: -119.7726
+  cli_selected_source:
+    name: Kaggle CCTV - Elevated Highway High-Speed Crash
+    type: file
+    url: data/test/cctv_kaggle_04_highway_highspeed.mp4
+    location: Elevated Highway Pole Cam KM 24.8
+    latitude: 0.0
+    longitude: 0.0

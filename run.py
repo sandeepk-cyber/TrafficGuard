@@ -66,7 +66,7 @@ def parse_args():
 
 def print_banner(mode: str, cam_name: str, cam_url: str, port: int):
     print("=" * 70)
-    print("  TRAFFICGUARD — REAL-TIME ACCIDENT DETECTION MVP")
+    print("  TRAFFICGUARD - REAL-TIME ACCIDENT DETECTION MVP")
     print("  Local Low-Resource Computer Vision Pipeline (CPU)")
     print("=" * 70)
     print(f"  MODE         : {mode}")
@@ -120,25 +120,33 @@ def main():
                 "Directories: https://opencctv.org/cameras/traffic or https://trafficvision.live/map\n"
             )
     else:
-        # Default behavior: try configured camera or guide user
-        mode_label = "DEFAULT AUTO-CONNECT"
-        camera_config = load_camera_config()
-        if not camera_config.get("url"):
-            print("\n[NOTE] No camera URL configured in config/cameras.yaml.")
-            print("To configure a live stream:")
-            print("  1. Open config/cameras.yaml")
-            print("  2. Paste a working public HLS (.m3u8), MJPEG, or RTSP URL into 'url:'")
-            print("  3. Run: python run.py --live\n")
-            print("Starting in simulation mode for demo purposes...\n")
-            is_simulation = True
+        # Default behavior: run on authentic Kaggle CCTV crash benchmark footage
+        default_cctv = "data/test/cctv_kaggle_04_highway_highspeed.mp4"
+        if os.path.exists(default_cctv):
+            mode_label = f"KAGGLE CCTV CRASH BENCHMARK ({default_cctv})"
             camera_config = {
-                "name": "Live Traffic Camera (Demo)",
-                "type": "simulation",
-                "url": "",
-                "latitude": 40.7128,
-                "longitude": -74.0060,
-                "location": "Public Traffic Camera - Demo Corridor"
+                "name": "Kaggle CCTV - Elevated Highway High-Speed Crash",
+                "type": "file",
+                "url": default_cctv,
+                "latitude": 37.7749,
+                "longitude": -122.4194,
+                "location": "Elevated Highway Pole Cam KM 24.8"
             }
+        else:
+            default_cctv = "data/test/accident_cctv.webm"
+            if os.path.exists(default_cctv):
+                mode_label = f"CCTV BENCHMARK ({default_cctv})"
+                camera_config = {
+                    "name": "Metropolitan Expressway Collision (CCTV 1080p)",
+                    "type": "file",
+                    "url": default_cctv,
+                    "latitude": 34.0522,
+                    "longitude": -118.2437,
+                    "location": "Metropolitan Expressway Junction KM 14.2"
+                }
+            else:
+                camera_config = load_camera_config()
+                mode_label = "CONFIGURED CCTV FEED"
 
     print_banner(
         mode=mode_label,
