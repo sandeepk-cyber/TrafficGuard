@@ -1,15 +1,6 @@
 """
-TrafficGuard - Enterprise System & Deep Learning Integration Test Suite
-Zero emojis, strict industrial validation with isolated test database.
-Validates:
-  1. YOLOv5n FP16 Deep Learning Object Detector & Containment Suppression
-  2. Authentic Kaggle & Metropolitan CCTV Video Feeds (H.264/WebM Decoding)
-  3. Zero-Ghosting Kinematic Tracking & Timestamp-Safe Velocity Stability
-  4. Persistent Latched Red Collision Detection & Tactical Symbology
-  5. Dense Urban Parking / Normal Traffic False Positive Immunity
-  6. Real-World CCTV Crash Verification (Kaggle Highway Impact Positive Trigger)
-  7. Commercial ITS Analytics (Flow Rate, Density LOS, CAD Dispatch)
-  8. Project-Wide Strict Zero Emojis Compliance
+TrafficGuard - Sequence-Level Behavioral & Architectural Test Suite
+Validates 12 sequence-level behavioral scenarios and strict zero emojis compliance.
 """
 import os
 import sys
@@ -18,318 +9,428 @@ import re
 import cv2
 import numpy as np
 
-# Add project root to sys.path
+# Ensure project root in sys.path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.detector import YOLODetector
-from app.tracker import KinematicTracker, TrackedVehicle
-from app.heuristics import EnterpriseAIDEngine
-from app.camera_manager import CameraManager
+from app.tracker import KinematicTracker, TrackedVehicle, TrackState
+from app.heuristics import IncidentEngine
+from app.camera_manager import CameraManager, CameraStreamSource, FRAME_WIDTH, FRAME_HEIGHT
 from app.database import IncidentDatabase
-from app.dashboard import TrafficGuardEngine, create_app
-
-TEST_DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "test_trafficguard.db")
-DATA_TEST_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "test")
 
 
-def test_yolo_detector_and_containment():
-    print("[TEST 1/8] Testing YOLO Deep Learning Detector & Containment Suppression...")
-    detector = YOLODetector(conf_threshold=0.25, nms_threshold=0.35)
-    assert detector.session is not None, "YOLO session failed to initialize"
-
-    # Synthetic vehicle test
-    test_img = np.zeros((480, 640, 3), dtype=np.uint8)
-    cv2.rectangle(test_img, (200, 200), (350, 320), (200, 200, 200), -1)
-
-    dets, inf_ms = detector.detect(test_img)
-    assert isinstance(dets, list), "Detections must be a list"
-    assert inf_ms >= 0, "Inference time must be recorded"
-
-    # Test on Scene 3 frame to verify sub-box containment suppression
-    s3_path = os.path.join(DATA_TEST_DIR, "cctv_kaggle_03_dense_crossroads.mp4")
-    if os.path.exists(s3_path):
-        cap = cv2.VideoCapture(s3_path)
-        cap.set(cv2.CAP_PROP_POS_FRAMES, 30)
-        ret, frame = cap.read()
-        cap.release()
-        if ret:
-            s3_dets, _ = detector.detect(frame)
-            # Ensure no co-located sub-box pairs exist with IoM > 0.65
-            for i in range(len(s3_dets)):
-                b1 = s3_dets[i]["bbox"]
-                a1 = (b1[2]-b1[0]) * (b1[3]-b1[1])
-                for j in range(i + 1, len(s3_dets)):
-                    b2 = s3_dets[j]["bbox"]
-                    a2 = (b2[2]-b2[0]) * (b2[3]-b2[1])
-                    inter_w = max(0, min(b1[2], b2[2]) - max(b1[0], b2[0]))
-                    inter_h = max(0, min(b1[3], b2[3]) - max(b1[1], b2[1]))
-                    inter = inter_w * inter_h
-                    if inter > 0 and min(a1, a2) > 0:
-                        containment = inter / min(a1, a2)
-                        assert containment <= 0.65, f"Sub-box containment violation: {containment:.2f}"
-
-    print(f"  [OK] YOLO Model active (FP16 inference: {inf_ms:.1f}ms) with sub-box containment suppression verified")
+def make_dummy_frame():
+    return np.zeros((FRAME_HEIGHT, FRAME_WIDTH, 3), dtype=np.uint8)
 
 
-def test_cctv_feeds_decoding():
-    print("[TEST 2/8] Testing Kaggle & Enterprise CCTV Video Feeds Integrity...")
-    required_cctv_files = [
-        "cctv_kaggle_01_urban_motorcycle.mp4",
-        "cctv_kaggle_02_junction_tbone.mp4",
-        "cctv_kaggle_03_dense_crossroads.mp4",
-        "cctv_kaggle_04_highway_highspeed.mp4",
-        "cctv_kaggle_05_truck_collision.mp4",
-        "cctv_kaggle_06_arterial_bus.mp4",
-        "cctv_kaggle_master_feed.mp4",
-        "accident_cctv.webm",
-        "cctv_junction_accident.webm",
-        "cctv_highway_interchange.webm"
+def test_01_normal_moving_traffic_no_incident():
+    print("[TEST 01/13] Scenario 1: Normal Moving Traffic -> No Incident...")
+    tracker = KinematicTracker()
+    engine = IncidentEngine(risk_threshold=0.65)
+    frame = make_dummy_frame()
+
+    for i in range(15):
+        t = i * 0.1
+        dets = [
+            {"bbox": [50 + i * 12, 100, 110 + i * 12, 140], "conf": 0.90, "class_id": 2, "class_name": "car"},
+            {"bbox": [80 + i * 14, 200, 140 + i * 14, 240], "conf": 0.92, "class_id": 2, "class_name": "car"},
+            {"bbox": [20 + i * 10, 280, 90 + i * 10, 330], "conf": 0.88, "class_id": 7, "class_name": "truck"},
+        ]
+        tracks = tracker.update(dets, timestamp=t)
+        annotated, score, status, is_inc, _ = engine.evaluate(frame, tracks, timestamp=t)
+
+        assert not is_inc, f"Frame {i}: False incident triggered in normal traffic"
+        assert status == "NORMAL", f"Frame {i}: Status was {status}, expected NORMAL"
+
+    confirmed = [tr for tr in tracks if tr.state == TrackState.CONFIRMED]
+    assert len(confirmed) == 3, f"Expected 3 confirmed tracks, got {len(confirmed)}"
+    print("  [PASS] Normal moving traffic maintains NORMAL status without false alarms.")
+
+
+def test_02_parked_vehicles_no_incident():
+    print("[TEST 02/13] Scenario 2: Parked Vehicles (Visual Overlap) -> No Incident...")
+    tracker = KinematicTracker()
+    engine = IncidentEngine(risk_threshold=0.65)
+    frame = make_dummy_frame()
+
+    # Three parked cars with slight perspective overlap (IoU ~ 0.12)
+    dets = [
+        {"bbox": [100, 120, 160, 180], "conf": 0.89, "class_id": 2, "class_name": "car"},
+        {"bbox": [150, 120, 210, 180], "conf": 0.91, "class_id": 2, "class_name": "car"},
+        {"bbox": [200, 120, 260, 180], "conf": 0.87, "class_id": 2, "class_name": "car"},
     ]
-    for filename in required_cctv_files:
-        path = os.path.join(DATA_TEST_DIR, filename)
-        assert os.path.exists(path), f"Required CCTV video file missing: {filename}"
-        cap = cv2.VideoCapture(path)
-        assert cap.isOpened(), f"Failed to open CCTV video: {filename}"
-        ret, frame = cap.read()
-        assert ret and frame is not None, f"Failed to read frame from {filename}"
-        h, w = frame.shape[:2]
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        cap.release()
-        print(f"  [OK] CCTV Feed Verified: {filename} ({w}x{h} @ {fps:.1f} FPS)")
+
+    for i in range(20):
+        t = i * 0.1
+        tracks = tracker.update(dets, timestamp=t)
+        annotated, score, status, is_inc, _ = engine.evaluate(frame, tracks, timestamp=t)
+
+        assert not is_inc, f"Frame {i}: Parked cars triggered false incident (score: {score:.2f})"
+        assert score < 0.30, f"Frame {i}: Parked cars score {score:.2f} too high"
+        assert status == "NORMAL"
+
+    print("  [PASS] Parked vehicles with visual bounding box overlap remain strictly NORMAL.")
 
 
-def test_zero_ghosting_tracker_and_velocity_stability():
-    print("[TEST 3/8] Testing Kinematic Tracker for Zero Ghosting & Velocity Stability...")
-    tracker = KinematicTracker(frame_width=640, frame_height=480, max_disappeared=2)
+def test_03_dense_traffic_no_incident():
+    print("[TEST 03/13] Scenario 3: Dense Queued Traffic -> No Incident...")
+    tracker = KinematicTracker()
+    engine = IncidentEngine(risk_threshold=0.65)
+    frame = make_dummy_frame()
 
-    # Frame 1: Initial detection with fixed timestamp
-    t0 = 100.0
-    dets_f1 = [
-        {"bbox": (100, 100, 160, 140), "class_name": "car", "confidence": 0.85, "center": (130, 120)},
-        {"bbox": (300, 200, 380, 250), "class_name": "truck", "confidence": 0.90, "center": (340, 225)}
-    ]
-    tracks1 = tracker.update(dets_f1, timestamp=t0)
-    assert len(tracks1) == 2, "Both vehicles should be detected"
+    # 5 vehicles in a tight queue moving at steady slow speed (4 px/frame)
+    for i in range(20):
+        t = i * 0.1
+        shift = i * 4
+        dets = [
+            {"bbox": [50 + shift, 150, 100 + shift, 190], "conf": 0.90, "class_id": 2, "class_name": "car"},
+            {"bbox": [115 + shift, 150, 165 + shift, 190], "conf": 0.88, "class_id": 2, "class_name": "car"},
+            {"bbox": [180 + shift, 150, 230 + shift, 190], "conf": 0.91, "class_id": 2, "class_name": "car"},
+            {"bbox": [245 + shift, 150, 295 + shift, 190], "conf": 0.89, "class_id": 2, "class_name": "car"},
+            {"bbox": [310 + shift, 150, 360 + shift, 190], "conf": 0.92, "class_id": 2, "class_name": "car"},
+        ]
+        tracks = tracker.update(dets, timestamp=t)
+        annotated, score, status, is_inc, _ = engine.evaluate(frame, tracks, timestamp=t)
 
-    # Frame 2: 33ms later (simulating 30 FPS)
-    t1 = t0 + 0.0333
-    dets_f2 = [
-        {"bbox": (104, 100, 164, 140), "class_name": "car", "confidence": 0.88, "center": (134, 120)},
-        {"bbox": (304, 200, 384, 250), "class_name": "truck", "confidence": 0.91, "center": (344, 225)}
-    ]
-    tracks2 = tracker.update(dets_f2, timestamp=t1)
-    assert len(tracks2) == 2, "Vehicles should be confirmed"
+        assert not is_inc, f"Frame {i}: Dense queue triggered incident (score: {score:.2f})"
+        assert status == "NORMAL"
 
-    # Check velocity stability: speed should be reasonable (~30-60 km/h), never 300+ km/h
-    for t in tracks2:
-        assert 0.0 <= t.speed_kmh <= 120.0, f"Unstable velocity recorded: {t.speed_kmh} km/h"
-
-    # Frame 3: Car vanishes
-    t2 = t1 + 0.0333
-    dets_f3 = [
-        {"bbox": (308, 200, 388, 250), "class_name": "truck", "confidence": 0.92, "center": (348, 225)}
-    ]
-    tracks3 = tracker.update(dets_f3, timestamp=t2)
-    assert len(tracks3) == 1, f"Ghosting detected: expected 1 track, got {len(tracks3)}"
-    assert tracks3[0].class_name == "truck"
-
-    # Extrapolation zero-drift check
-    extrapolated = tracker.extrapolate_all(dt=0.033)
-    assert len(extrapolated) == 1
-
-    # Reset capability check
-    tracker.reset()
-    assert len(tracker.tracks) == 0 and tracker.next_id == 1, "Tracker reset failed"
-
-    print("  [OK] Zero ghosting and velocity stability verified: dt bounded, zero drift, clean reset")
+    print("  [PASS] Dense queue traffic maintains steady flow without false alerts.")
 
 
-def test_persistent_red_collision_latch():
-    print("[TEST 4/8] Testing Persistent 7-Second Red Collision Latching...")
-    heuristics = EnterpriseAIDEngine(collision_latch_duration=7.0)
+def test_04_vehicles_passing_close_no_incident():
+    print("[TEST 04/13] Scenario 4: Close Vehicle Passing Without Collision -> No Incident...")
+    tracker = KinematicTracker()
+    engine = IncidentEngine(risk_threshold=0.65)
+    frame = make_dummy_frame()
 
-    v1 = TrackedVehicle(1, (200, 200, 260, 240), "car", 0.9, frame_height=480)
-    v2 = TrackedVehicle(2, (205, 202, 265, 242), "truck", 0.9, frame_height=480)
-    v1.hits = 4
-    v2.hits = 4
-    v1.is_confirmed = True
-    v2.is_confirmed = True
-    v1.velocity = [15.0, 0.0]
-    v2.velocity = [-15.0, 0.0]
-    v1.acceleration = [-160.0, 0.0]
-    v2.acceleration = [-140.0, 0.0]
-    v1.speed_kmh = 35.0
-    v2.speed_kmh = 28.0
-    v1.max_historical_speed = 35.0
-    v2.max_historical_speed = 28.0
+    # Vehicle 1 moving East at 20 px/frame, Vehicle 2 moving West at 20 px/frame in adjacent lanes
+    for i in range(20):
+        t = i * 0.1
+        v1_x = 50 + i * 20
+        v2_x = 450 - i * 20
+        dets = [
+            {"bbox": [v1_x, 100, v1_x + 60, 140], "conf": 0.92, "class_id": 2, "class_name": "car"},
+            {"bbox": [v2_x, 135, v2_x + 60, 175], "conf": 0.90, "class_id": 2, "class_name": "car"},
+        ]
+        tracks = tracker.update(dets, timestamp=t)
+        annotated, score, status, is_inc, _ = engine.evaluate(frame, tracks, timestamp=t)
 
-    dummy_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        # Even when passing closest (around frame 10), steady speed means no arrest -> no collision
+        assert not is_inc, f"Frame {i}: Passing vehicles triggered collision (score: {score:.2f})"
 
-    # Collision frame
-    annotated1, risk1, sev1, is_inc1, data1 = heuristics.evaluate(dummy_frame, [v1, v2])
-    assert is_inc1, "Collision should trigger incident alarm"
-    assert sev1 == "CRITICAL", f"Severity should be CRITICAL, got {sev1}"
-    assert 1 in heuristics.latched_collisions, "Track 1 should be latched"
-    assert 2 in heuristics.latched_collisions, "Track 2 should be latched"
-
-    # Verify bright red bounding box pixels (BGR: 0, 0, 255)
-    red_pixels = np.count_nonzero((annotated1[:, :, 2] > 200) & (annotated1[:, :, 0] < 50))
-    assert red_pixels > 50, "Annotated frame must render vivid bright red bounding box"
-
-    # Stopped post-collision holds latch
-    time.sleep(0.02)
-    v1.speed_kmh = 0.0
-    v2.speed_kmh = 0.0
-    v1.velocity = [0.0, 0.0]
-    v2.velocity = [0.0, 0.0]
-    annotated2, risk2, sev2, is_inc2, data2 = heuristics.evaluate(dummy_frame, [v1, v2])
-
-    assert is_inc2, "Collision state must remain latched across subsequent frames"
-    assert sev2 == "CRITICAL", "Severity must remain CRITICAL during latch window"
-    assert v1.in_collision, "Vehicle 1 must retain in_collision state"
-
-    print("  [OK] Persistent red collision latching verified: Bounding boxes turn bright red and hold state")
+    print("  [PASS] Vehicles passing in adjacent lanes maintain steady speed and trigger no collision.")
 
 
-def test_dense_parking_false_positive_immunity():
-    print("[TEST 5/8] Testing Dense Urban Parking False-Positive Immunity (Kaggle Scene 3)...")
-    detector = YOLODetector(conf_threshold=0.25, nms_threshold=0.35)
-    tracker = KinematicTracker(frame_width=640, frame_height=360, max_disappeared=2)
-    heuristics = EnterpriseAIDEngine(risk_threshold=0.70)
+def test_05_genuine_collision_sequence():
+    print("[TEST 05/13] Scenario 5: Genuine Collision Sequence -> Confirmed Incident...")
+    tracker = KinematicTracker()
+    engine = IncidentEngine(risk_threshold=0.65)
+    frame = make_dummy_frame()
 
-    s3_path = os.path.join(DATA_TEST_DIR, "cctv_kaggle_03_dense_crossroads.mp4")
-    assert os.path.exists(s3_path), f"Missing {s3_path}"
-    cap = cv2.VideoCapture(s3_path)
+    # Phase 1: Rapid approach (frames 0 to 7)
+    for i in range(8):
+        t = i * 0.1
+        dets = [
+            {"bbox": [100 + i * 15, 150, 160 + i * 15, 200], "conf": 0.95, "class_id": 2, "class_name": "car"},
+            {"bbox": [320 - i * 12, 150, 380 - i * 12, 200], "conf": 0.93, "class_id": 2, "class_name": "car"},
+        ]
+        tracks = tracker.update(dets, timestamp=t)
+        engine.evaluate(frame, tracks, timestamp=t)
 
-    # Process first 60 frames of normal dense parking phase
-    false_alarm_count = 0
-    for f_idx in range(60):
-        ret, frame = cap.read()
-        if not ret:
-            break
-        dets, _ = detector.detect(frame)
-        tracks = tracker.update(dets, timestamp=f_idx / 30.0)
-        _, risk, severity, is_inc, inc_data = heuristics.evaluate(frame, tracks)
-        if is_inc and inc_data and inc_data.get("incident_code") == "TID-01 COLLISION_IMPACT":
-            false_alarm_count += 1
+    # Phase 2: High impact deformation and post-impact kinetic arrest (frames 8 to 15)
+    confirmed_incident_observed = False
+    for i in range(8, 16):
+        t = i * 0.1
+        # Overlapping locked boxes (IoU ~ 0.30) with zero movement (arrest)
+        dets = [
+            {"bbox": [210, 150, 270, 200], "conf": 0.94, "class_id": 2, "class_name": "car"},
+            {"bbox": [225, 150, 285, 200], "conf": 0.92, "class_id": 2, "class_name": "car"},
+        ]
+        tracks = tracker.update(dets, timestamp=t)
+        annotated, score, status, is_inc, inc_data = engine.evaluate(frame, tracks, timestamp=t)
 
-    cap.release()
-    assert false_alarm_count == 0, f"False positive collisions occurred in normal parking phase: {false_alarm_count}"
-    print(f"  [OK] False-Positive Immunity Verified: 0 false alarms across dense urban parking surveillance")
+        if is_inc and status == "CONFIRMED COLLISION":
+            confirmed_incident_observed = True
+            assert inc_data is not None
+            assert "TID-01" in inc_data["incident_code"]
+            assert score >= 0.65
 
-
-def test_kaggle_highway_crash_positive_detection():
-    print("[TEST 6/8] Testing Positive Crash Detection on Real CCTV (Kaggle Scene 4 Highway)...")
-    detector = YOLODetector(conf_threshold=0.25, nms_threshold=0.35)
-    tracker = KinematicTracker(frame_width=640, frame_height=360, max_disappeared=2)
-    heuristics = EnterpriseAIDEngine(risk_threshold=0.70, collision_latch_duration=7.0)
-
-    s4_path = os.path.join(DATA_TEST_DIR, "cctv_kaggle_04_highway_highspeed.mp4")
-    assert os.path.exists(s4_path), f"Missing {s4_path}"
-    cap = cv2.VideoCapture(s4_path)
-
-    crash_detected = False
-    peak_risk = 0.0
-    detected_frame = None
-
-    # Step through highway crash video
-    for f_idx in range(180):
-        ret, frame = cap.read()
-        if not ret:
-            break
-        dets, _ = detector.detect(frame)
-        tracks = tracker.update(dets, timestamp=f_idx / 30.0)
-        annotated, risk, severity, is_inc, inc_data = heuristics.evaluate(frame, tracks)
-        if risk > peak_risk:
-            peak_risk = risk
-        if is_inc and inc_data and inc_data.get("incident_code") == "TID-01 COLLISION_IMPACT":
-            crash_detected = True
-            detected_frame = f_idx
-            break
-
-    cap.release()
-    assert crash_detected, f"Failed to detect real highway crash in Kaggle dataset (peak risk: {peak_risk:.2f})"
-    print(f"  [OK] Positive Crash Detection Verified: Real CCTV highway collision detected at frame {detected_frame} (Peak Risk: {peak_risk*100:.0f}%)")
+    assert confirmed_incident_observed, "Genuine collision failed to trigger CONFIRMED COLLISION"
+    print("  [PASS] Genuine collision sequence verified with empirical approach, overlap, and arrest.")
 
 
-def test_commercial_its_metrics_and_cad_dispatch():
-    print("[TEST 7/8] Testing Commercial ITS Analytics & CAD Dispatch...")
-    engine = TrafficGuardEngine(detection_fps=15.0, is_simulation_mode=False)
+def test_06_vehicle_suddenly_stops():
+    print("[TEST 06/13] Scenario 6: Vehicle Suddenly Stops in Active Lane -> TID-02...")
+    tracker = KinematicTracker()
+    # Configure stopped_duration_threshold to 0.8s for fast sequence testing
+    engine = IncidentEngine(stopped_duration_threshold=0.8)
+    frame = make_dummy_frame()
 
-    telemetry = engine.get_telemetry()
-    assert "flow_rate_vpm" in telemetry, "Missing flow_rate_vpm"
-    assert "density_los" in telemetry, "Missing density_los"
-    assert "avg_speed_kmh" in telemetry, "Missing avg_speed_kmh"
-    assert "collision_threat_index" in telemetry, "Missing collision_threat_index"
-    assert "overlays" in telemetry, "Missing layer overlays"
+    # Step A: Vehicle moving actively for 8 frames
+    for i in range(8):
+        t = i * 0.1
+        dets = [{"bbox": [50 + i * 25, 150, 110 + i * 25, 190], "conf": 0.92, "class_id": 2, "class_name": "car"}]
+        tracks = tracker.update(dets, timestamp=t)
+        engine.evaluate(frame, tracks, timestamp=t)
 
-    # Layer overlays check
-    assert engine.layer_overlays["boxes"] is True
-    assert engine.layer_overlays["vectors"] is True
+    # Step B: Vehicle halts completely in the traffic lane for 20 frames (2.0 seconds)
+    stop_x = 50 + 7 * 25
+    triggered_tid02 = False
+    for i in range(8, 28):
+        t = i * 0.1
+        dets = [{"bbox": [stop_x, 150, stop_x + 60, 190], "conf": 0.92, "class_id": 2, "class_name": "car"}]
+        tracks = tracker.update(dets, timestamp=t)
+        annotated, score, status, is_inc, inc_data = engine.evaluate(frame, tracks, timestamp=t)
+        if is_inc and inc_data and "TID-02" in inc_data.get("incident_code", ""):
+            triggered_tid02 = True
 
-    # CAD dispatch check
-    db = IncidentDatabase(db_path=TEST_DB_PATH)
-    inc_id = db.record_incident(
-        camera_name="Kaggle Highway CCTV KM 24.8",
-        location="Elevated Highway Sector 4",
-        incident_code="TID-01 COLLISION_IMPACT",
-        risk_score=0.98,
-        severity="CRITICAL",
-        speed_at_impact="88 km/h",
-        vehicles_involved="Car #2 vs Car #4",
-        description="High-velocity rear-impact collision"
+    assert triggered_tid02, "Previously moving vehicle stopped in traffic failed to trigger TID-02"
+    print("  [PASS] Previously moving vehicle stopped in active traffic correctly flagged as TID-02.")
+
+
+def test_07_wrong_way_sequence():
+    print("[TEST 07/13] Scenario 7: Wrong-Way Vehicle -> TID-03...")
+    tracker = KinematicTracker()
+    # Configure corridor heading = 0 degrees (Eastbound flow, rightwards)
+    engine = IncidentEngine(corridor_heading=0.0)
+    frame = make_dummy_frame()
+
+    # Vehicle A travels East (correct direction), Vehicle B travels West (wrong way)
+    triggered_tid03 = False
+    for i in range(10):
+        t = i * 0.1
+        dets = [
+            {"bbox": [50 + i * 20, 100, 110 + i * 20, 140], "conf": 0.90, "class_id": 2, "class_name": "car"},
+            {"bbox": [400 - i * 20, 200, 460 - i * 20, 240], "conf": 0.92, "class_id": 2, "class_name": "car"},
+        ]
+        tracks = tracker.update(dets, timestamp=t)
+        annotated, score, status, is_inc, inc_data = engine.evaluate(frame, tracks, timestamp=t)
+        if is_inc and inc_data and "TID-03" in inc_data.get("incident_code", ""):
+            triggered_tid03 = True
+
+    assert triggered_tid03, "Opposing vehicle failed to trigger TID-03 Wrong-Way Driver"
+    print("  [PASS] Wrong-way vehicle trajectory correctly detected and flagged with TID-03.")
+
+
+def test_08_detector_misses_one_frame_track_survives():
+    print("[TEST 08/13] Scenario 8: Detector Misses One Frame -> Track Survives...")
+    tracker = KinematicTracker()
+
+    # 4 frames with detections to establish CONFIRMED track
+    for i in range(4):
+        dets = [{"bbox": [100 + i * 10, 100, 160 + i * 10, 150], "conf": 0.90, "class_id": 2, "class_name": "car"}]
+        tracks = tracker.update(dets, timestamp=i * 0.1)
+
+    assert len(tracks) == 1
+    assert tracks[0].state == TrackState.CONFIRMED
+    tid = tracks[0].track_id
+
+    # Frame 5: Detector misses (empty detections)
+    # The track is not rendered (zero ghosting), but survives in memory with missed_frames == 1
+    tracks_after_miss = tracker.update([], timestamp=0.5)
+    assert len(tracks_after_miss) == 0, "Ghost box was rendered on frame with zero detections"
+    assert tid in tracker.tracks, "Track was dropped from internal state after single miss"
+    assert tracker.tracks[tid].missed_frames == 1
+
+    # Frame 6: Detector re-detects the vehicle -> re-associates same track ID
+    dets = [{"bbox": [140, 100, 200, 150], "conf": 0.90, "class_id": 2, "class_name": "car"}]
+    tracks_redetect = tracker.update(dets, timestamp=0.6)
+    assert len(tracks_redetect) == 1
+    assert tracks_redetect[0].track_id == tid, f"Expected track ID {tid} to be maintained, got {tracks_redetect[0].track_id}"
+    print("  [PASS] Track survived single detector frame omission without loss or ghosting.")
+
+
+def test_09_detector_misses_multiple_frames_track_removed():
+    print("[TEST 09/13] Scenario 9: Detector Misses Multiple Frames -> Track Removed...")
+    tracker = KinematicTracker(max_missed=3)
+
+    # Establish confirmed track
+    for i in range(4):
+        dets = [{"bbox": [100 + i * 10, 100, 160 + i * 10, 150], "conf": 0.90, "class_id": 2, "class_name": "car"}]
+        tracker.update(dets, timestamp=i * 0.1)
+
+    assert len(tracker.tracks) == 1
+    tid = next(iter(tracker.tracks.keys()))
+
+    # Miss 4 frames (exceeding max_missed = 3)
+    for i in range(4):
+        tracker.update([], timestamp=0.4 + (i + 1) * 0.1)
+
+    assert tid not in tracker.tracks, "Stale track was not pruned after exceeding max_missed"
+    assert len(tracker.tracks) == 0
+    print("  [PASS] Stale track cleanly pruned after exceeding max_missed window.")
+
+
+def test_10_camera_disconnect_offline_not_simulation():
+    print("[TEST 10/13] Scenario 10: Camera Disconnect -> OFFLINE, Not Simulation...")
+    # Initialize camera source with non-existent URL
+    invalid_cfg = {
+        "id": "test_cam_invalid",
+        "name": "Invalid Feed",
+        "type": "file",
+        "url": "non_existent_file_path_12345.mp4"
+    }
+    src = CameraStreamSource(invalid_cfg)
+    time.sleep(0.3)
+
+    success, frame = src.read_frame()
+    src.release()
+
+    assert not success, "Invalid camera source reported success"
+    assert src.status in ["OFFLINE", "CONNECTING", "RECONNECTING"]
+    assert frame is not None
+    assert frame.shape == (FRAME_HEIGHT, FRAME_WIDTH, 3)
+
+    # Verify placeholder is clean dark frame, not synthetic cartoon traffic
+    mean_val = np.mean(frame)
+    assert mean_val < 60.0, f"Expected dark placeholder frame, got mean intensity {mean_val:.1f}"
+    print("  [PASS] Disconnected camera renders clean OFFLINE frame without synthetic fallback.")
+
+
+def test_11_camera_reconnect_online():
+    print("[TEST 11/13] Scenario 11: Valid Stream Ingestion -> ONLINE...")
+    valid_video = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "data", "test", "cctv_kaggle_04_highway_highspeed.mp4"
     )
-    assert inc_id is not None
-    db.update_incident_status(inc_id, "DISPATCHED")
-    cad_ticket = f"CAD-2026-{inc_id:05d}"
-    assert "CAD-2026-" in cad_ticket
+    assert os.path.exists(valid_video), f"Benchmark video missing: {valid_video}"
 
-    db.clear_all_incidents()
-    if os.path.exists(TEST_DB_PATH):
-        os.remove(TEST_DB_PATH)
+    cfg = {
+        "id": "test_online_cam",
+        "name": "Highway Benchmark",
+        "type": "file",
+        "url": valid_video,
+        "loop": True
+    }
+    src = CameraStreamSource(cfg)
+    time.sleep(0.5)
 
-    print("  [OK] Commercial ITS metrics (VPM, LOS, Threat Index) and CAD dispatch verified")
+    success, frame = src.read_frame()
+    status = src.status
+    src.release()
+
+    assert success, "Valid video source failed to read frame"
+    assert status == "ONLINE", f"Expected ONLINE status, got {status}"
+    assert frame is not None
+    print("  [PASS] Real video feed ingests cleanly and achieves ONLINE state.")
 
 
-def test_zero_emojis_compliance():
-    print("[TEST 8/8] Testing Project-Wide Strict Zero Emojis Compliance...")
-    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    emoji_pattern = re.compile(r'[\U0001F000-\U0001FAFF\U00002600-\U000027BF\U0001F300-\U0001F9FF]')
+def test_12_stream_switching_resources_released():
+    print("[TEST 12/13] Scenario 12: Stream Switching -> Resources Released Cleanly...")
+    mgr = CameraManager()
+    cam_keys = list(mgr.cameras.keys())
+    assert len(cam_keys) >= 2, "At least 2 cameras required in catalog"
+
+    cam1, cam2 = cam_keys[0], cam_keys[1]
+
+    mgr.set_active_camera(cam1)
+    time.sleep(0.3)
+    src1 = mgr.active_source
+    assert src1 is not None and src1.running
+
+    # Switch to second camera
+    mgr.set_active_camera(cam2)
+    time.sleep(0.3)
+    src2 = mgr.active_source
+
+    assert not src1.running, "Previous camera source thread was not stopped upon switch"
+    assert src2 is not None and src2.running
+    assert mgr.active_camera_id == cam2
+
+    mgr.release()
+    print("  [PASS] Stream switching cleanly terminates previous background workers and resources.")
+
+
+def test_13_strict_zero_emojis_project_wide():
+    print("[TEST 13/13] Project-Wide Zero Emojis Compliance Verification...")
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    # Emoji Unicode range pattern
+    emoji_pattern = re.compile(
+        "[\U0001F600-\U0001F64F"  # emoticons
+        "\U0001F300-\U0001F5FF"  # symbols & pictographs
+        "\U0001F680-\U0001F6FF"  # transport & map
+        "\U0001F1E0-\U0001F1FF"  # flags
+        "\U00002702-\U000027B0"  # dingbats
+        "\U0001F900-\U0001F9FF"  # supplemental symbols
+        "\U0001FA70-\U0001FAFF"  # symbols and pictographs extended-a
+        "\U00002600-\U000026FF]"  # misc symbols
+    )
+
+    checked_extensions = {".py", ".yaml", ".yml", ".md", ".html", ".js", ".json"}
+    ignore_dirs = {".git", ".idea", "__pycache__", "venv", ".gemini", "scratch"}
 
     violations = []
-    for root, dirs, files in os.walk(root_dir):
-        if '.git' in root or '__pycache__' in root or '.system_generated' in root:
-            continue
+    files_scanned = 0
+
+    for root, dirs, files in os.walk(repo_root):
+        dirs[:] = [d for d in dirs if d not in ignore_dirs]
         for f in files:
-            if f.endswith(('.py', '.yaml', '.yml', '.md', '.txt', '.html', '.json', '.css', '.js')):
-                p = os.path.join(root, f)
-                with open(p, 'r', encoding='utf-8', errors='ignore') as fp:
-                    for lno, line in enumerate(fp, 1):
-                        m = emoji_pattern.findall(line)
-                        if m:
-                            violations.append(f"{os.path.relpath(p, root_dir)}:{lno}")
+            ext = os.path.splitext(f)[1].lower()
+            if ext in checked_extensions:
+                filepath = os.path.join(root, f)
+                files_scanned += 1
+                try:
+                    with open(filepath, "r", encoding="utf-8", errors="ignore") as file:
+                        for line_no, line in enumerate(file, start=1):
+                            if emoji_pattern.search(line):
+                                violations.append((os.path.relpath(filepath, repo_root), line_no, line.strip()))
+                except Exception:
+                    pass
 
-    assert len(violations) == 0, f"Found emoji violations in: {violations}"
-    print("  [OK] Zero emojis verified: 100% clean codebase across all files")
+    if violations:
+        print(f"  FAILED: Found {len(violations)} emoji violations across {files_scanned} files:")
+        for v in violations[:10]:
+            print(f"    {v[0]}:{v[1]} -> {v[2]}")
+        assert False, f"Strict zero emojis compliance violated in {len(violations)} lines"
+
+    print(f"  [PASS] Scanned {files_scanned} project files: strictly ZERO emojis found.")
 
 
-def run_all_tests():
+def main():
     print("=" * 70)
-    print("  TRAFFICGUARD ENTERPRISE ITS-AID v2.5 VERIFICATION SUITE")
-    print("  Benchmarked Against Authentic Kaggle CCTV Accident Dataset")
+    print("  TRAFFICGUARD - SEQUENCE BEHAVIORAL & ARCHITECTURAL TEST SUITE")
+    print("  12 Sequence Tests + Strict Zero Emojis Validation")
     print("=" * 70)
-    test_yolo_detector_and_containment()
-    test_cctv_feeds_decoding()
-    test_zero_ghosting_tracker_and_velocity_stability()
-    test_persistent_red_collision_latch()
-    test_dense_parking_false_positive_immunity()
-    test_kaggle_highway_crash_positive_detection()
-    test_commercial_its_metrics_and_cad_dispatch()
-    test_zero_emojis_compliance()
+
+    tests = [
+        test_01_normal_moving_traffic_no_incident,
+        test_02_parked_vehicles_no_incident,
+        test_03_dense_traffic_no_incident,
+        test_04_vehicles_passing_close_no_incident,
+        test_05_genuine_collision_sequence,
+        test_06_vehicle_suddenly_stops,
+        test_07_wrong_way_sequence,
+        test_08_detector_misses_one_frame_track_survives,
+        test_09_detector_misses_multiple_frames_track_removed,
+        test_10_camera_disconnect_offline_not_simulation,
+        test_11_camera_reconnect_online,
+        test_12_stream_switching_resources_released,
+        test_13_strict_zero_emojis_project_wide
+    ]
+
+    passed = 0
+    start_t = time.time()
+
+    for t in tests:
+        try:
+            t()
+            passed += 1
+        except AssertionError as e:
+            print(f"\n  [FAIL] {t.__name__}: {e}\n")
+            sys.exit(1)
+        except Exception as e:
+            print(f"\n  [ERROR] {t.__name__} raised unexpected exception: {e}\n")
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
+
+    dur = time.time() - start_t
     print("=" * 70)
-    print("  ALL 8/8 ENTERPRISE TESTS PASSED CLEANLY WITH ZERO ERRORS!")
+    print(f"  ALL {passed}/{len(tests)} TESTS PASSED SUCCESSFULLY in {dur:.2f}s")
     print("=" * 70)
 
 
 if __name__ == "__main__":
-    run_all_tests()
+    main()

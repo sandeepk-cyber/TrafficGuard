@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-TrafficGuard - Real-Time Accident Detection MVP
-Main CLI runner supporting Live Stream, Local MP4 Video, and Simulation modes.
+TrafficGuard - Real-Time CCTV Accident Detection MVP
+Local low-resource computer vision pipeline on CPU.
+Zero emojis, strict industrial standards.
 """
 import os
 import sys
@@ -9,9 +10,8 @@ import argparse
 import logging
 import uvicorn
 
-from app.main import load_camera_config
-from app.dashboard import TrafficGuardEngine, create_app
-from app.video import FRAME_WIDTH, FRAME_HEIGHT, DETECTION_FPS
+from app.dashboard import TrafficGuardEngine, create_app, DEFAULT_DETECTION_FPS
+from app.camera_manager import FRAME_WIDTH, FRAME_HEIGHT, CameraManager
 
 logging.basicConfig(
     level=logging.INFO,
@@ -23,58 +23,58 @@ logger = logging.getLogger("trafficguard")
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="TrafficGuard - Real-Time Traffic Accident Detection MVP",
+        description="TrafficGuard - Real-Time CCTV Accident Detection MVP",
         formatter_class=argparse.RawTextHelpFormatter
     )
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
-        "--live",
-        action="store_true",
-        help="Connect to the public live traffic camera stream configured in config/cameras.yaml"
+        "--camera",
+        type=str,
+        default=None,
+        help="Specify camera ID from catalog (e.g. --camera cctv_kaggle_04_highway)"
     )
     group.add_argument(
         "--video",
         type=str,
         metavar="PATH",
-        help="Process a local MP4 video file fallback (e.g. --video data/test/accident.mp4)"
+        help="Process a local video file (e.g. --video data/test/cctv_kaggle_04_highway_highspeed.mp4)"
     )
     group.add_argument(
-        "--simulate",
+        "--live",
         action="store_true",
-        help="Run in simulation mode (triggers a test incident after 5s for dashboard testing)"
+        help="Ingest the public HLS live stream configured in config/cameras.yaml"
     )
     parser.add_argument(
         "--port",
         type=int,
         default=8001,
-        help="Dashboard web server port (default: 8001)"
+        help="Web console port (default: 8001)"
     )
     parser.add_argument(
         "--host",
         type=str,
         default="127.0.0.1",
-        help="Dashboard web server host (default: 127.0.0.1)"
+        help="Web console host (default: 127.0.0.1)"
     )
     parser.add_argument(
         "--fps",
         type=float,
-        default=DETECTION_FPS,
-        help=f"Detection processing rate in FPS (default: {DETECTION_FPS})"
+        default=DEFAULT_DETECTION_FPS,
+        help=f"Target detection rate in FPS (default: {DEFAULT_DETECTION_FPS})"
     )
     return parser.parse_args()
 
 
-def print_banner(mode: str, cam_name: str, cam_url: str, port: int):
+def print_banner(camera_name: str, stream_url: str, detection_fps: float, host: str, port: int):
     print("=" * 70)
-    print("  TRAFFICGUARD - REAL-TIME ACCIDENT DETECTION MVP")
-    print("  Local Low-Resource Computer Vision Pipeline (CPU)")
+    print("  TRAFFICGUARD - REAL-TIME CCTV ACCIDENT DETECTION MVP")
+    print("  Lightweight Local Computer Vision Pipeline (CPU)")
     print("=" * 70)
-    print(f"  MODE         : {mode}")
-    print(f"  CAMERA NAME  : {cam_name}")
-    print(f"  STREAM URL   : {cam_url if cam_url else '(None - Waiting for feed)'}")
-    print(f"  RESOLUTION   : {FRAME_WIDTH}x{FRAME_HEIGHT}")
-    print(f"  DETECTION FPS: ~{DETECTION_FPS} FPS (Hardware Throttled)")
-    print(f"  DASHBOARD    : http://127.0.0.1:{port}")
+    print(f"  ACTIVE CAMERA : {camera_name}")
+    print(f"  STREAM SOURCE : {stream_url}")
+    print(f"  PROCESSING RES: {FRAME_WIDTH}x{FRAME_HEIGHT}")
+    print(f"  DETECTION FPS : {detection_fps:.1f} FPS (Target)")
+    print(f"  OPERATOR UI   : http://{host}:{port}")
     print("=" * 70)
     print("  Press Ctrl+C to stop.\n")
 
@@ -82,88 +82,56 @@ def print_banner(mode: str, cam_name: str, cam_url: str, port: int):
 def main():
     args = parse_args()
 
-    # Determine mode & camera source
-    is_simulation = False
-    mode_label = "DEFAULT"
+    camera_config = None
 
-    if args.simulate:
-        is_simulation = True
-        mode_label = "SIMULATION (Test Incident in 5s)"
-        camera_config = {
-            "name": "Live Traffic Camera (Simulated)",
-            "type": "simulation",
-            "url": "",
-            "latitude": 37.7749,
-            "longitude": -122.4194,
-            "location": "Simulated Metropolitan Corridor"
-        }
-    elif args.video:
-        mode_label = f"LOCAL VIDEO FILE ({args.video})"
+    if args.video:
         if not os.path.exists(args.video):
-            logger.error("Video file not found: %s", args.video)
+            logger.error("Video file does not exist: %s", args.video)
             sys.exit(1)
         camera_config = {
-            "name": "Local Test Video",
+            "name": f"Local Video: {os.path.basename(args.video)}",
             "type": "file",
             "url": args.video,
-            "latitude": 34.0522,
-            "longitude": -118.2437,
-            "location": f"Local File: {os.path.basename(args.video)}"
+            "location": "Local Benchmark File",
+            "latitude": None,
+            "longitude": None,
+            "loop": True
         }
     elif args.live:
-        mode_label = "LIVE PUBLIC TRAFFIC CAMERA"
-        camera_config = load_camera_config()
-        if not camera_config.get("url"):
-            logger.warning(
-                "No live URL specified in config/cameras.yaml.\n"
-                "Please edit config/cameras.yaml and add a working public HLS (.m3u8), MJPEG, or RTSP stream.\n"
-                "Directories: https://opencctv.org/cameras/traffic or https://trafficvision.live/map\n"
-            )
-    else:
-        # Default behavior: run on authentic Kaggle CCTV crash benchmark footage
-        default_cctv = "data/test/cctv_kaggle_04_highway_highspeed.mp4"
-        if os.path.exists(default_cctv):
-            mode_label = f"KAGGLE CCTV CRASH BENCHMARK ({default_cctv})"
-            camera_config = {
-                "name": "Kaggle CCTV - Elevated Highway High-Speed Crash",
-                "type": "file",
-                "url": default_cctv,
-                "latitude": 37.7749,
-                "longitude": -122.4194,
-                "location": "Elevated Highway Pole Cam KM 24.8"
-            }
+        camera_config = {
+            "name": "Public HLS Ingest Stream",
+            "type": "hls",
+            "url": "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
+            "location": "Public Live Ingest Feed",
+            "latitude": None,
+            "longitude": None,
+            "loop": False
+        }
+    elif args.camera:
+        # Check catalog
+        mgr = CameraManager()
+        if args.camera in mgr.cameras:
+            cinfo = mgr.cameras[args.camera]
+            camera_config = dict(cinfo)
         else:
-            default_cctv = "data/test/accident_cctv.webm"
-            if os.path.exists(default_cctv):
-                mode_label = f"CCTV BENCHMARK ({default_cctv})"
-                camera_config = {
-                    "name": "Metropolitan Expressway Collision (CCTV 1080p)",
-                    "type": "file",
-                    "url": default_cctv,
-                    "latitude": 34.0522,
-                    "longitude": -118.2437,
-                    "location": "Metropolitan Expressway Junction KM 14.2"
-                }
-            else:
-                camera_config = load_camera_config()
-                mode_label = "CONFIGURED CCTV FEED"
-
-    print_banner(
-        mode=mode_label,
-        cam_name=camera_config.get("name", "Traffic Camera"),
-        cam_url=camera_config.get("url", ""),
-        port=args.port
-    )
+            logger.warning("Camera ID '%s' not found in catalog. Using default benchmark.", args.camera)
 
     # Initialize processing engine
     engine = TrafficGuardEngine(
         camera_config=camera_config,
-        detection_fps=args.fps,
-        is_simulation_mode=is_simulation
+        detection_fps=args.fps
     )
-    engine.start()
 
-    # Create FastAPI app
+    cam_info = engine.camera_mgr.get_active_camera_info()
+    print_banner(
+        camera_name=cam_info.get("name", "Active Camera"),
+        stream_url=cam_info.get("url", "Catalog Feed"),
+        detection_fps=args.fps,
+        host=args.host,
+        port=args.port
+    )
+
+    engine.start()
     app = create_app(engine)
 
     try:
@@ -183,4 +151,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

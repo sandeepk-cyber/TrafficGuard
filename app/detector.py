@@ -1,6 +1,8 @@
 """
-TrafficGuard - Deep Learning Object Detector (YOLO FP16 ONNX Engine)
-High-recall detection with aspect-ratio preserving letterbox padding and zero emojis.
+TrafficGuard - Object Detection Pipeline (YOLO ONNX Engine)
+Robust, lightweight detector supporting dynamic model input types (FP32/FP16),
+class-aware NMS, aspect-ratio preserving letterboxing, and configurable thresholds.
+Zero emojis, strict industrial coding standards.
 """
 import os
 import time
@@ -15,6 +17,12 @@ logger = logging.getLogger("trafficguard.detector")
 MODEL_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models")
 DEFAULT_MODEL_PATH = os.path.join(MODEL_DIR, "yolov5n.onnx")
 MODEL_URL = "https://github.com/ultralytics/yolov5/releases/download/v7.0/yolov5n.onnx"
+
+# Configurable detector defaults
+DEFAULT_DETECTION_FPS = 10
+DEFAULT_INPUT_SIZE = 640
+DEFAULT_CONF_THRESHOLD = 0.20
+DEFAULT_NMS_THRESHOLD = 0.40
 
 COCO_CLASSES = [
     "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat",
@@ -40,7 +48,7 @@ TARGET_CLASSES = {
 
 
 def letterbox(img, new_shape=(640, 640), color=(114, 114, 114)):
-    """Resizes and pads image while preserving native aspect ratio."""
+    """Resizes and pads image while strictly preserving native aspect ratio."""
     shape = img.shape[:2]  # (height, width)
     r = min(new_shape[0] / shape[0], new_shape[1] / shape[1])
     new_unpad = int(round(shape[1] * r)), int(round(shape[0] * r))
@@ -57,13 +65,27 @@ def letterbox(img, new_shape=(640, 640), color=(114, 114, 114)):
 
 
 class YOLODetector:
-    def __init__(self, model_path=DEFAULT_MODEL_PATH, conf_threshold=0.25, nms_threshold=0.35):
+    def __init__(
+        self,
+        model_path=DEFAULT_MODEL_PATH,
+        conf_threshold=DEFAULT_CONF_THRESHOLD,
+        nms_threshold=DEFAULT_NMS_THRESHOLD,
+        input_size=DEFAULT_INPUT_SIZE,
+        target_classes=None
+    ):
         self.model_path = model_path
-        self.conf_threshold = conf_threshold
-        self.nms_threshold = nms_threshold
+        self.conf_threshold = float(conf_threshold)
+        self.nms_threshold = float(nms_threshold)
+        self.input_size = int(input_size)
+        self.target_classes = target_classes or TARGET_CLASSES
+
         self.session = None
         self.input_name = None
         self.output_name = None
+        self.input_type = "tensor(float)"
+        self.is_fp16 = False
+        self.input_shape = [1, 3, self.input_size, self.input_size]
+
         self._ensure_model_exists()
         self._init_session()
 
@@ -91,17 +113,37 @@ class YOLODetector:
         opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
 
         self.session = ort.InferenceSession(self.model_path, opts, providers=["CPUExecutionProvider"])
-        self.input_name = self.session.get_inputs()[0].name
-        self.output_name = self.session.get_outputs()[0].name
-        logger.info("YOLO ONNX session active (Input: %s, Output: %s, Conf: %.2f)",
-                    self.input_name, self.output_name, self.conf_threshold)
+        input_meta = self.session.get_inputs()[0]
+        output_meta = self.session.get_outputs()[0]
+
+        self.input_name = input_meta.name
+        self.output_name = output_meta.name
+        self.input_type = input_meta.type
+        self.input_shape = input_meta.shape
+
+        # Dynamically determine if the ONNX model expects float16 or float32
+        self.is_fp16 = ("float16" in self.input_type.lower())
+
+        logger.info(
+            "YOLO ONNX initialized: input=%s (type=%s, shape=%s), output=%s, conf=%.2f, nms=%.2f",
+            self.input_name, self.input_type, self.input_shape, self.output_name,
+            self.conf_threshold, self.nms_threshold
+        )
 
     def detect(self, frame):
         """
-        Runs object detection on frame using letterbox padding and high-recall threshold.
+        Executes YOLO object detection with aspect-preserving letterboxing,
+        model-consistent data type conversion, class-aware NMS, and boundary clamping.
+
         Returns:
-            detections: list of dicts (bbox, class_name, class_id, confidence, center)
-            inference_ms: float
+            detections: list of dicts with keys:
+                - bbox: tuple (x1, y1, x2, y2)
+                - class_name: str
+                - class_id: int
+                - confidence: float
+                - center: tuple (cx, cy)
+                - area: float
+            inference_ms: float latency in milliseconds
         """
         if self.session is None or frame is None:
             return [], 0.0
@@ -110,17 +152,25 @@ class YOLODetector:
         t_start = time.perf_counter()
 
         # 1. Aspect-ratio preserving letterbox
-        img_padded, ratio, (dw, dh) = letterbox(frame, (640, 640))
+        img_padded, ratio, (dw, dh) = letterbox(frame, (self.input_size, self.input_size))
         img_rgb = cv2.cvtColor(img_padded, cv2.COLOR_BGR2RGB)
-        img_fp16 = (img_rgb.astype(np.float16) / 255.0).transpose(2, 0, 1)
-        input_tensor = np.expand_dims(img_fp16, axis=0)
 
-        # 2. Inference
+        # 2. Match exact model input tensor dtype
+        if self.is_fp16:
+            img_norm = (img_rgb.astype(np.float16) / 255.0).transpose(2, 0, 1)
+        else:
+            img_norm = (img_rgb.astype(np.float32) / 255.0).transpose(2, 0, 1)
+
+        input_tensor = np.expand_dims(img_norm, axis=0)
+
+        # 3. ONNX inference
         outputs = self.session.run([self.output_name], {self.input_name: input_tensor})[0]
         preds = outputs[0].astype(np.float32)  # Shape: (25200, 85)
 
-        # 3. Filter predictions with calibrated high-recall threshold (0.18)
-        boxes, scores, class_ids = [], [], []
+        # 4. Filter predictions by objectness and class score
+        boxes = []
+        scores = []
+        class_ids = []
 
         for pred in preds:
             obj_conf = pred[4]
@@ -128,9 +178,9 @@ class YOLODetector:
                 class_scores = pred[5:]
                 cid = int(np.argmax(class_scores))
                 score = float(obj_conf * class_scores[cid])
-                if score > self.conf_threshold and cid in TARGET_CLASSES:
+                if score > self.conf_threshold and cid in self.target_classes:
                     cx, cy, bw, bh = float(pred[0]), float(pred[1]), float(pred[2]), float(pred[3])
-                    # Invert letterbox padding
+                    # Invert letterbox coordinates
                     x1 = (cx - bw / 2.0 - dw) / ratio
                     y1 = (cy - bh / 2.0 - dh) / ratio
                     w = bw / ratio
@@ -139,63 +189,79 @@ class YOLODetector:
                     scores.append(score)
                     class_ids.append(cid)
 
-        # 4. NMS filtering
-        indices = cv2.dnn.NMSBoxes(boxes, scores, self.conf_threshold, self.nms_threshold)
-        raw_candidates = []
-        if len(indices) > 0:
-            for i in indices:
-                idx = int(i)
-                x, y, w, h = boxes[idx]
-                x1 = max(0, min(w_orig - 1, x))
-                y1 = max(0, min(h_orig - 1, y))
-                x2 = max(0, min(w_orig, x + w))
-                y2 = max(0, min(h_orig, y + h))
-                bw = x2 - x1
-                bh = y2 - y1
-                cid = class_ids[idx]
-                cname = TARGET_CLASSES.get(cid, "vehicle")
+        if len(boxes) == 0:
+            inference_ms = round((time.perf_counter() - t_start) * 1000.0, 1)
+            return [], inference_ms
 
-                # Filter out uncalibrated deep-horizon noise
-                if cname == "person":
-                    if bh < 20 or bw < 8:
-                        continue
-                else:
-                    if bh < 14 or bw < 22 or (bw * bh) < 280:
-                        continue
+        # 5. Category-Aware Non-Maximum Suppression (NMS)
+        # Vehicles (car, motorcycle, bus, truck) form one NMS group to eliminate co-located
+        # duplicate class predictions (e.g. car + bus on the same vehicle), while pedestrians
+        # remain in an isolated group to prevent suppression in proximity.
+        by_category = {}
+        for idx, cid in enumerate(class_ids):
+            cat = "person" if cid == 0 else "vehicle"
+            by_category.setdefault(cat, []).append(idx)
 
-                raw_candidates.append({
-                    "bbox": (x1, y1, x2, y2),
-                    "class_name": cname,
-                    "class_id": cid,
-                    "confidence": round(scores[idx], 2),
-                    "center": ((x1 + x2) / 2.0, (y1 + y2) / 2.0),
-                    "area": float(bw * bh)
-                })
+        selected_indices = []
+        for cat, group_indices in by_category.items():
+            cls_boxes = [boxes[i] for i in group_indices]
+            cls_scores = [scores[i] for i in group_indices]
+            nms_res = cv2.dnn.NMSBoxes(cls_boxes, cls_scores, self.conf_threshold, self.nms_threshold)
+            for k in nms_res:
+                selected_indices.append(group_indices[int(k)])
 
-        # 5. Containment / Soft-IoM Suppression
-        # Suppress duplicate sub-components (e.g. wheels/trunks) enclosed inside larger bounding boxes
-        sorted_candidates = sorted(raw_candidates, key=lambda d: d["confidence"], reverse=True)
-        suppressed_indices = set()
-        for i in range(len(sorted_candidates)):
-            if i in suppressed_indices:
+        # Sub-box containment suppression for overlapping vehicle classes (IoM > 0.65)
+        filtered_indices = []
+        selected_indices.sort(key=lambda i: scores[i], reverse=True)
+        for i in selected_indices:
+            bi = boxes[i]
+            ai = max(1, bi[2] * bi[3])
+            ci = class_ids[i]
+            suppress = False
+            for prev in filtered_indices:
+                cp = class_ids[prev]
+                if ci != 0 and cp != 0:  # Both are vehicles
+                    bp = boxes[prev]
+                    ap = max(1, bp[2] * bp[3])
+                    inter_w = max(0, min(bi[0] + bi[2], bp[0] + bp[2]) - max(bi[0], bp[0]))
+                    inter_h = max(0, min(bi[1] + bi[3], bp[1] + bp[3]) - max(bi[1], bp[1]))
+                    inter = inter_w * inter_h
+                    if inter / min(ai, ap) > 0.65:
+                        suppress = True
+                        break
+            if not suppress:
+                filtered_indices.append(i)
+
+        # 6. Assemble clamped detections
+        detections = []
+        for idx in filtered_indices:
+            x, y, w, h = boxes[idx]
+            x1 = max(0.0, min(float(w_orig), float(x)))
+            y1 = max(0.0, min(float(h_orig), float(y)))
+            x2 = max(0.0, min(float(w_orig), float(x + w)))
+            y2 = max(0.0, min(float(h_orig), float(y + h)))
+
+            bw_clamped = x2 - x1
+            bh_clamped = y2 - y1
+
+            # Reject microscopic noise and degraded artifacts
+            if bw_clamped < 14.0 or bh_clamped < 10.0 or (bw_clamped * bh_clamped) < 180.0:
                 continue
-            b1 = sorted_candidates[i]["bbox"]
-            a1 = sorted_candidates[i]["area"]
-            for j in range(i + 1, len(sorted_candidates)):
-                if j in suppressed_indices:
-                    continue
-                b2 = sorted_candidates[j]["bbox"]
-                a2 = sorted_candidates[j]["area"]
 
-                inter_w = max(0.0, min(b1[2], b2[2]) - max(b1[0], b2[0]))
-                inter_h = max(0.0, min(b1[3], b2[3]) - max(b1[1], b2[1]))
-                inter = inter_w * inter_h
+            cid = class_ids[idx]
+            cname = self.target_classes.get(cid, "vehicle")
+            conf = round(scores[idx], 3)
+            center = ((x1 + x2) / 2.0, (y1 + y2) / 2.0)
+            area = float(bw_clamped * bh_clamped)
 
-                if inter > 0.0 and min(a1, a2) > 0.0:
-                    containment = inter / min(a1, a2)
-                    if containment > 0.65:
-                        suppressed_indices.add(j)
+            detections.append({
+                "bbox": (x1, y1, x2, y2),
+                "class_name": cname,
+                "class_id": cid,
+                "confidence": conf,
+                "center": center,
+                "area": area
+            })
 
-        detections = [d for idx, d in enumerate(sorted_candidates) if idx not in suppressed_indices]
         inference_ms = round((time.perf_counter() - t_start) * 1000.0, 1)
         return detections, inference_ms

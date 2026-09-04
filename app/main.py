@@ -1,5 +1,6 @@
 """
 TrafficGuard - Configuration & Core Utilities
+Zero emojis.
 """
 import os
 import yaml
@@ -10,18 +11,19 @@ logger = logging.getLogger("trafficguard.main")
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config", "cameras.yaml")
 
 
-def load_camera_config(camera_id: str = "demo"):
+def load_camera_config(camera_id: str = "cctv_kaggle_04_highway"):
     """
     Loads camera configuration from config/cameras.yaml.
     Returns a dictionary with camera parameters.
     """
     default_config = {
-        "name": "Live Traffic Camera (Simulated)",
-        "type": "simulation",
-        "url": "",
-        "latitude": 37.7749,
-        "longitude": -122.4194,
-        "location": "Metropolitan Traffic Corridor (Simulated)"
+        "name": "Kaggle CCTV - Elevated Highway High-Speed Crash",
+        "type": "file",
+        "url": "data/test/cctv_kaggle_04_highway_highspeed.mp4",
+        "latitude": None,
+        "longitude": None,
+        "location": "Dataset benchmark clip (Elevated Highway)",
+        "loop": True
     }
 
     if not os.path.exists(CONFIG_PATH):
@@ -37,22 +39,24 @@ def load_camera_config(camera_id: str = "demo"):
             cfg = cameras[camera_id]
             return {
                 "name": cfg.get("name", "Traffic Camera"),
-                "type": cfg.get("type", "hls"),
+                "type": cfg.get("type", "file"),
                 "url": cfg.get("url", ""),
-                "latitude": cfg.get("latitude", 37.7749),
-                "longitude": cfg.get("longitude", -122.4194),
-                "location": cfg.get("location", "Traffic Corridor")
+                "latitude": cfg.get("latitude"),
+                "longitude": cfg.get("longitude"),
+                "location": cfg.get("location", "CCTV Benchmark"),
+                "loop": cfg.get("loop", True)
             }
         elif cameras:
             first_key = next(iter(cameras))
             cfg = cameras[first_key]
             return {
                 "name": cfg.get("name", "Traffic Camera"),
-                "type": cfg.get("type", "hls"),
+                "type": cfg.get("type", "file"),
                 "url": cfg.get("url", ""),
-                "latitude": cfg.get("latitude", 37.7749),
-                "longitude": cfg.get("longitude", -122.4194),
-                "location": cfg.get("location", "Traffic Corridor")
+                "latitude": cfg.get("latitude"),
+                "longitude": cfg.get("longitude"),
+                "location": cfg.get("location", "CCTV Benchmark"),
+                "loop": cfg.get("loop", True)
             }
     except Exception as e:
         logger.error("Error reading camera config from %s: %s", CONFIG_PATH, e)
