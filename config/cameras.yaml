@@ -1,0 +1,110 @@
+cameras:
+  cctv_kaggle_04_highway:
+    name: Kaggle CCTV - Elevated Highway High-Speed Crash
+    type: file
+    url: data/test/cctv_kaggle_04_highway_highspeed.mp4
+    location: Dataset benchmark clip (Elevated Highway)
+    source_type: benchmark
+    latitude: null
+    longitude: null
+    loop: true
+
+  cctv_kaggle_02_junction:
+    name: Kaggle CCTV - Arterial Junction T-Bone Collision
+    type: file
+    url: data/test/cctv_kaggle_02_junction_tbone.mp4
+    location: Dataset benchmark clip (Arterial Junction)
+    source_type: benchmark
+    latitude: null
+    longitude: null
+    loop: true
+
+  cctv_kaggle_01_urban:
+    name: Kaggle CCTV - Urban Motorcycle Conflict
+    type: file
+    url: data/test/cctv_kaggle_01_urban_motorcycle.mp4
+    location: Dataset benchmark clip (Downtown Corridor)
+    source_type: benchmark
+    latitude: null
+    longitude: null
+    loop: true
+
+  cctv_kaggle_03_crossroads:
+    name: Kaggle CCTV - Dense Urban Commercial Crossroads
+    type: file
+    url: data/test/cctv_kaggle_03_dense_crossroads.mp4
+    location: Dataset benchmark clip (Commercial Crossroads)
+    source_type: benchmark
+    latitude: null
+    longitude: null
+    loop: true
+
+  cctv_kaggle_05_truck:
+    name: Kaggle CCTV - Commercial Truck Heavy Impact
+    type: file
+    url: data/test/cctv_kaggle_05_truck_collision.mp4
+    location: Dataset benchmark clip (Logistics Expressway)
+    source_type: benchmark
+    latitude: null
+    longitude: null
+    loop: true
+
+  cctv_kaggle_06_bus:
+    name: Kaggle CCTV - Arterial Bus Corridor Collision
+    type: file
+    url: data/test/cctv_kaggle_06_arterial_bus.mp4
+    location: Dataset benchmark clip (Metropolitan Transit)
+    source_type: benchmark
+    latitude: null
+    longitude: null
+    loop: true
+
+  cctv_kaggle_master:
+    name: Kaggle CCTV - Full Incident Surveillance Compilation
+    type: file
+    url: data/test/cctv_kaggle_master_feed.mp4
+    location: Dataset benchmark clip (Multi-Sector Compilation)
+    source_type: benchmark
+    latitude: null
+    longitude: null
+    loop: true
+
+  cctv_expressway_accident:
+    name: Metropolitan Expressway Collision (CCTV 1080p)
+    type: file
+    url: data/test/accident_cctv.webm
+    location: Dataset benchmark clip (Expressway Junction)
+    source_type: benchmark
+    latitude: null
+    longitude: null
+    loop: true
+
+  cctv_intersection_collision:
+    name: Urban Intersection Collision (CCTV 1080p)
+    type: file
+    url: data/test/cctv_junction_accident.webm
+    location: Dataset benchmark clip (Urban Intersection)
+    source_type: benchmark
+    latitude: null
+    longitude: null
+    loop: true
+
+  cctv_highway_interchange:
+    name: Interstate Interchange (CCTV 1080p)
+    type: file
+    url: data/test/cctv_highway_interchange.webm
+    location: Dataset benchmark clip (Interstate Interchange)
+    source_type: benchmark
+    latitude: null
+    longitude: null
+    loop: true
+
+  public_hls_test_feed:
+    name: Public HLS Ingest Test Feed
+    type: hls
+    url: https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
+    location: Public Test HLS Stream (Ingest verification only)
+    source_type: public_hls
+    latitude: null
+    longitude: null
+    loop: false
